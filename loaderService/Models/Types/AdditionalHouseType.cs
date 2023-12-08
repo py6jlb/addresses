@@ -1,4 +1,4 @@
-namespace loaderService.Models.Types;
+namespace loaderService;
 
 public class HouseType
 {
