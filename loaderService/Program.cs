@@ -1,9 +1,9 @@
 using loaderService;
-using loaderService.database;
+using loaderService.Database;
 
 var builder = Host.CreateApplicationBuilder(args);
 builder.Services.AddSingleton<DataContext>();
-builder.Services.AddTransient<GarRepository>();
+builder.Services.AddTransient<XmlExtractor>();
 builder.Services.AddHostedService<Worker>();
 
 var host = builder.Build();

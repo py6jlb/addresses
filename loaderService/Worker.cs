@@ -3,10 +3,12 @@ namespace loaderService;
 public class Worker : BackgroundService
 {
     private readonly ILogger<Worker> _logger;
+    private readonly XmlExtractor _extractor;
 
-    public Worker(ILogger<Worker> logger)
+    public Worker(ILogger<Worker> logger, XmlExtractor extractor)
     {
         _logger = logger;
+        _extractor = extractor;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -17,7 +19,10 @@ public class Worker : BackgroundService
             {
                 _logger.LogInformation("Worker running at: {time}", DateTimeOffset.Now);
             }
-            await Task.Delay(1000, stoppingToken);
+            var path = "./data/base";
+            await _extractor.ExtractTypes(path);
+            _logger.LogInformation("Iteration ended: {time}", DateTimeOffset.Now);
+            await Task.Delay(60000);
         }
     }
 }

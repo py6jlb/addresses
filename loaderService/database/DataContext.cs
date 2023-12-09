@@ -2,7 +2,7 @@ using System.Data;
 using Microsoft.Data.Sqlite;
 using Dapper;
 
-namespace loaderService.database;
+namespace loaderService.Database;
 
 public class DataContext
 {
@@ -28,15 +28,113 @@ public class DataContext
         {
             var sql = """
                 CREATE TABLE IF NOT EXISTS 
-                Users (
-                    Id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-                    Title TEXT,
-                    FirstName TEXT,
-                    LastName TEXT,
-                    Email TEXT,
-                    Role INTEGER,
-                    PasswordHash TEXT
+                add_house_types (
+                    id INTEGER,
+                    name TEXT,
+                    short_name TEXT,
+                    desc TEXT,
+                    is_active INTEGER,
+                    update_date TEXT,
+                    start_date TEXT,
+                    end_date TEXT
                 );
+
+                CREATE TABLE IF NOT EXISTS 
+                addr_obj_types (
+                    id INTEGER,
+                    level INTEGER,
+                    name TEXT,
+                    short_name TEXT,
+                    desc TEXT,
+                    is_active INTEGER,
+                    update_date TEXT,
+                    start_date TEXT,
+                    end_date TEXT
+                );
+
+                CREATE TABLE IF NOT EXISTS 
+                house_types (
+                    id INTEGER,
+                    name TEXT,
+                    short_name TEXT,
+                    desc TEXT,
+                    is_active INTEGER,
+                    update_date TEXT,
+                    start_date TEXT,
+                    end_date TEXT
+                );
+
+                CREATE TABLE IF NOT EXISTS 
+                apartment_types (
+                    id INTEGER,
+                    name TEXT,
+                    short_name TEXT,
+                    desc TEXT,
+                    is_active INTEGER,
+                    update_date TEXT,
+                    start_date TEXT,
+                    end_date TEXT
+                );
+
+                CREATE TABLE IF NOT EXISTS 
+                normative_docs_kind (
+                    id INTEGER,
+                    name TEXT
+                );
+
+                CREATE TABLE IF NOT EXISTS 
+                normative_docs_types (
+                    id INTEGER,
+                    name TEXT,
+                    start_date TEXT,
+                    end_date TEXT
+                );
+
+                CREATE TABLE IF NOT EXISTS 
+                object_levels (
+                    level INTEGER,
+                    name TEXT,
+                    start_date TEXT,
+                    end_date TEXT,
+                    update_date TEXT,
+                    is_active TEXT
+                );
+                
+
+                CREATE TABLE IF NOT EXISTS 
+                operation_types (
+                    id INTEGER,
+                    name TEXT,
+                    is_active INTEGER,
+                    update_date TEXT,
+                    start_date TEXT,
+                    end_date TEXT
+                );
+
+                
+                CREATE TABLE IF NOT EXISTS 
+                param_types (
+                    id INTEGER,
+                    name TEXT,
+                    code TEXT,
+                    desc TEXT,
+                    is_active INTEGER,
+                    update_date TEXT,
+                    start_date TEXT,
+                    end_date TEXT
+                );
+
+                CREATE TABLE IF NOT EXISTS 
+                room_types (
+                    id INTEGER,
+                    name TEXT,
+                    desc TEXT,
+                    is_active INTEGER,
+                    update_date TEXT,
+                    start_date TEXT,
+                    end_date TEXT
+                );
+                
             """;
             await connection.ExecuteAsync(sql);
         }
