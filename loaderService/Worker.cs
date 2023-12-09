@@ -16,12 +16,19 @@ public class Worker : BackgroundService
         while (!stoppingToken.IsCancellationRequested)
         {
             if (_logger.IsEnabled(LogLevel.Information))
-            {
                 _logger.LogInformation("Worker running at: {time}", DateTimeOffset.Now);
-            }
-            var path = "./data/base";
-            await _extractor.ExtractTypes(path);
-            _logger.LogInformation("Iteration ended: {time}", DateTimeOffset.Now);
+
+            _logger.LogInformation("Types extraction start at: {time}", DateTimeOffset.Now);
+            var typePath = "./data/base";
+            await _extractor.ExtractTypes(typePath);
+            _logger.LogInformation("Types extraction end at: {time}", DateTimeOffset.Now);
+
+            _logger.LogInformation("Data extraction start at: {time}", DateTimeOffset.Now);
+            var dataPath = "./data/base/05";
+            await _extractor.ExtractData(dataPath);
+            _logger.LogInformation("Data extraction end at: {time}", DateTimeOffset.Now);
+
+            _logger.LogInformation("Iteration end at: {time}", DateTimeOffset.Now);
             await Task.Delay(60000);
         }
     }

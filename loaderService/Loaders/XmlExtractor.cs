@@ -544,7 +544,76 @@ public class XmlExtractor
     #region DATA
     private async Task ExtractNormativeDocs(string path)
     {
-        await Task.Delay(1);
+        const string fileMask = "AS_NORMATIVE_DOCS_*.XML";
+        var selectQuery = @"SELECT COUNT(*) FROM normative_docs WHERE id = @1";
+        var insertQuery = @"INSERT INTO normative_docs VALUES (@1, @2, @3, @4, @5, @6, @7, @8, @9, @10, @11, @12)";
+        var updateQuery = @"UPDATE normative_docs SET name = @2, date = @3, number = @4, type = @5, kind = @6, update_date = @7, org_name = @8, reg_num = @9, reg_date = @10, acc_date = @11, comment = @12 WHERE id = @1";
+
+        var file = Directory.GetFiles(path, fileMask);
+        if (!file.Any()) return;
+        var filePath = file[0];
+        using var reader = XmlReader.Create(filePath, new XmlReaderSettings { Async = true });
+        using var connection = _database.CreateConnection();
+        connection.Open();
+        while (await reader.ReadAsync())
+        {
+            if (reader.NodeType != XmlNodeType.Element || reader.GetAttribute("ID") == null) continue;
+            var res = new NormativeDoc();
+
+            res.Id = int.Parse(reader.GetAttribute("ID"));
+            res.Name = reader.GetAttribute("NAME");
+            res.Number = reader.GetAttribute("NUMBER");
+            res.OrgName = reader.GetAttribute("ORGNAME");
+            res.RegNum = reader.GetAttribute("REGNUM");
+            res.Comment = reader.GetAttribute("COMMENT");
+
+            var date = reader.GetAttribute("DATE");
+            res.Date = date != null ? DateTime.Parse(date) : null;
+
+            var regDate = reader.GetAttribute("REGDATE");
+            res.RegDate = regDate != null ? DateTime.Parse(regDate) : null;
+
+            var accDate = reader.GetAttribute("ACCDATE");
+            res.Date = accDate != null ? DateTime.Parse(accDate) : null;           
+                        
+            var type = reader.GetAttribute("TYPE");
+            res.Type = type != null ? int.Parse(type) : null;
+            
+            var kind = reader.GetAttribute("KIND");
+            res.Kind = kind != null ? int.Parse(kind) : null;
+            
+            var updateDate = reader.GetAttribute("UPDATEDATE");
+            res.UpdateDate = updateDate != null ? DateTime.Parse(updateDate) : null;
+
+
+            var count = await connection.ExecuteScalarAsync<int>(
+                selectQuery,
+                param: new Dictionary<string, object> { { "@1", res.Id } },
+                commandTimeout: 600);
+
+            var queryParams = new Dictionary<string, object?> {
+                { "@1", res.Id },
+                { "@2", res.Name },
+                { "@3", res.Date },
+                { "@4", res.Number },
+                { "@5", res.Type },
+                { "@6", res.Kind },
+                { "@7", res.UpdateDate },
+                { "@8", res.OrgName },
+                { "@9", res.RegNum },
+                { "@10", res.RegDate },
+                { "@11", res.AccDate },
+                { "@12", res.Comment },
+            };
+            if (count > 0)
+            {
+                await connection.ExecuteAsync(updateQuery, queryParams, commandTimeout: 600);
+            }
+            else
+            {
+                await connection.ExecuteAsync(insertQuery, queryParams, commandTimeout: 600);
+            }
+        }
     }
 
     private async Task ExtractCarplacesParams(string path)

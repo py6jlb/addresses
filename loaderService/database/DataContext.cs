@@ -134,6 +134,24 @@ public class DataContext
                     start_date TEXT,
                     end_date TEXT
                 );
+
+                -- таблицы с данными -----------------------------
+
+                CREATE TABLE IF NOT EXISTS 
+                normative_docs (
+                    id INTEGER,
+                    name TEXT,
+                    date TEXT,
+                    number INTEGER,
+                    type INTEGER,
+                    kind INTEGER,
+                    update_date TEXT,
+                    org_name TEXT,
+                    reg_num TEXT,
+                    reg_date TEXT,
+                    acc_date TEXT,
+                    comment TEXT
+                );
                 
             """;
             await connection.ExecuteAsync(sql);
