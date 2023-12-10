@@ -152,6 +152,84 @@ public class DataContext
                     acc_date TEXT,
                     comment TEXT
                 );
+
+                CREATE TABLE IF NOT EXISTS 
+                room_params (
+                    id INTEGER,
+                    object_id INTEGER,
+                    change_id INTEGER,
+                    change_end_id INTEGER,
+                    type_id INTEGER,
+                    value TEXT,
+                    update_date TEXT,
+                    start_date TEXT,
+                    end_date TEXT
+                );
+
+                CREATE TABLE IF NOT EXISTS 
+                apartment_params (
+                    id INTEGER,
+                    object_id INTEGER,
+                    change_id INTEGER,
+                    change_end_id INTEGER,
+                    type_id INTEGER,
+                    value TEXT,
+                    update_date TEXT,
+                    start_date TEXT,
+                    end_date TEXT
+                );
+
+                CREATE TABLE IF NOT EXISTS 
+                house_params (
+                    id INTEGER,
+                    object_id INTEGER,
+                    change_id INTEGER,
+                    change_end_id INTEGER,
+                    type_id INTEGER,
+                    value TEXT,
+                    update_date TEXT,
+                    start_date TEXT,
+                    end_date TEXT
+                );
+
+                CREATE TABLE IF NOT EXISTS 
+                stead_params (
+                    id INTEGER,
+                    object_id INTEGER,
+                    change_id INTEGER,
+                    change_end_id INTEGER,
+                    type_id INTEGER,
+                    value TEXT,
+                    update_date TEXT,
+                    start_date TEXT,
+                    end_date TEXT
+                );
+
+                CREATE TABLE IF NOT EXISTS 
+                addr_obj_params (
+                    id INTEGER,
+                    object_id INTEGER,
+                    change_id INTEGER,
+                    change_end_id INTEGER,
+                    type_id INTEGER,
+                    value TEXT,
+                    update_date TEXT,
+                    start_date TEXT,
+                    end_date TEXT
+                );
+
+                CREATE TABLE IF NOT EXISTS 
+                carplaces_params (
+                    id INTEGER,
+                    object_id INTEGER,
+                    change_id INTEGER,
+                    change_end_id INTEGER,
+                    type_id INTEGER,
+                    value TEXT,
+                    update_date TEXT,
+                    start_date TEXT,
+                    end_date TEXT
+                );
                 
             """;
             await connection.ExecuteAsync(sql);

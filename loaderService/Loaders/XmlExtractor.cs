@@ -1,3 +1,5 @@
+using System.Data;
+using System.Data.Common;
 using System.Xml;
 using Dapper;
 using loaderService.Database;
@@ -7,6 +9,9 @@ public class XmlExtractor
 {
     private readonly IConfiguration _configuration;
     private readonly DataContext _database;
+
+    private const int _capacity = 1001;
+    private const int condition = 1000;
 
     public XmlExtractor(IConfiguration configuration, DataContext database)
     {
@@ -542,8 +547,9 @@ public class XmlExtractor
     }
 
     #region DATA
-    private async Task ExtractNormativeDocs(string path)
+    private async Task ExtractNormativeDocs(string path, bool delta)
     {
+        var paramNames = new[] { "@1", "@2", "@3", "@4", "@5", "@6", "@7", "@8", "@9", "@10", "@11", "@12", };
         const string fileMask = "AS_NORMATIVE_DOCS_*.XML";
         var selectQuery = @"SELECT COUNT(*) FROM normative_docs WHERE id = @1";
         var insertQuery = @"INSERT INTO normative_docs VALUES (@1, @2, @3, @4, @5, @6, @7, @8, @9, @10, @11, @12)";
@@ -555,172 +561,676 @@ public class XmlExtractor
         using var reader = XmlReader.Create(filePath, new XmlReaderSettings { Async = true });
         using var connection = _database.CreateConnection();
         connection.Open();
+
+        var updateCommandParamValues = new List<Dictionary<string, object?>>(_capacity);
+        var addCommandParamValues = new List<Dictionary<string, object?>>(_capacity);
         while (await reader.ReadAsync())
         {
             if (reader.NodeType != XmlNodeType.Element || reader.GetAttribute("ID") == null) continue;
-            var res = new NormativeDoc();
-
-            res.Id = int.Parse(reader.GetAttribute("ID"));
-            res.Name = reader.GetAttribute("NAME");
-            res.Number = reader.GetAttribute("NUMBER");
-            res.OrgName = reader.GetAttribute("ORGNAME");
-            res.RegNum = reader.GetAttribute("REGNUM");
-            res.Comment = reader.GetAttribute("COMMENT");
-
+            var id = int.Parse(reader.GetAttribute("ID"));
             var date = reader.GetAttribute("DATE");
-            res.Date = date != null ? DateTime.Parse(date) : null;
-
             var regDate = reader.GetAttribute("REGDATE");
-            res.RegDate = regDate != null ? DateTime.Parse(regDate) : null;
-
             var accDate = reader.GetAttribute("ACCDATE");
-            res.Date = accDate != null ? DateTime.Parse(accDate) : null;           
-                        
             var type = reader.GetAttribute("TYPE");
-            res.Type = type != null ? int.Parse(type) : null;
-            
             var kind = reader.GetAttribute("KIND");
-            res.Kind = kind != null ? int.Parse(kind) : null;
-            
             var updateDate = reader.GetAttribute("UPDATEDATE");
-            res.UpdateDate = updateDate != null ? DateTime.Parse(updateDate) : null;
-
-
-            var count = await connection.ExecuteScalarAsync<int>(
-                selectQuery,
-                param: new Dictionary<string, object> { { "@1", res.Id } },
-                commandTimeout: 600);
-
             var queryParams = new Dictionary<string, object?> {
-                { "@1", res.Id },
-                { "@2", res.Name },
-                { "@3", res.Date },
-                { "@4", res.Number },
-                { "@5", res.Type },
-                { "@6", res.Kind },
-                { "@7", res.UpdateDate },
-                { "@8", res.OrgName },
-                { "@9", res.RegNum },
-                { "@10", res.RegDate },
-                { "@11", res.AccDate },
-                { "@12", res.Comment },
+                { "@1", id },
+                { "@2", reader.GetAttribute("NAME") },
+                { "@3", date != null ? DateTime.Parse(date) : null },
+                { "@4", reader.GetAttribute("NUMBER") },
+                { "@5", type != null ? int.Parse(type) : null },
+                { "@6", kind != null ? int.Parse(kind) : null },
+                { "@7", updateDate != null ? DateTime.Parse(updateDate) : null },
+                { "@8", reader.GetAttribute("ORGNAME") },
+                { "@9", reader.GetAttribute("REGNUM") },
+                { "@10", regDate != null ? DateTime.Parse(regDate) : null },
+                { "@11", accDate != null ? DateTime.Parse(accDate) : null },
+                { "@12", reader.GetAttribute("COMMENT") },
             };
-            if (count > 0)
+
+
+            if (delta)
             {
-                await connection.ExecuteAsync(updateQuery, queryParams, commandTimeout: 600);
+                var count = await connection.ExecuteScalarAsync<int>(
+                    selectQuery,
+                    param: new Dictionary<string, object> { { "@1", id } },
+                    commandTimeout: 600);
+                if (count > 0)
+                    updateCommandParamValues.Add(queryParams);
+                else
+                    addCommandParamValues.Add(queryParams);
             }
             else
             {
-                await connection.ExecuteAsync(insertQuery, queryParams, commandTimeout: 600);
+                addCommandParamValues.Add(queryParams);
             }
+
+            if (addCommandParamValues.Count == condition)
+            {
+                ToDb(connection, insertQuery, paramNames, addCommandParamValues);
+                addCommandParamValues.Clear();
+            }
+
+            if (updateCommandParamValues.Count == condition)
+            {
+                ToDb(connection, updateQuery, paramNames, updateCommandParamValues);
+                updateCommandParamValues.Clear();
+            }
+        }
+
+        if (addCommandParamValues.Count > 0)
+        {
+            ToDb(connection, insertQuery, paramNames, addCommandParamValues);
+            addCommandParamValues.Clear();
+        }
+
+        if (updateCommandParamValues.Count > 0)
+        {
+            ToDb(connection, updateQuery, paramNames, updateCommandParamValues);
+            updateCommandParamValues.Clear();
         }
     }
 
-    private async Task ExtractCarplacesParams(string path)
+    private async Task ExtractCarplacesParams(string path, bool delta)
+    {
+        var paramNames = new[] { "@1", "@2", "@3", "@4", "@5", "@6", "@7", "@8", "@9" };
+        const string fileMask = "AS_CARPLACES_PARAMS_*.XML";
+        var selectQuery = @"SELECT COUNT(*) FROM carplaces_params WHERE id = @1";
+        var insertQuery = @"INSERT INTO carplaces_params VALUES (@1, @2, @3, @4, @5, @6, @7, @8, @9)";
+        var updateQuery = @"UPDATE carplaces_params SET object_id = @2, change_id = @3, change_end_id = @4, type_id = @5, value = @6, update_date = @7, start_date = @8, end_date = @9 WHERE id = @1";
+
+        var file = Directory.GetFiles(path, fileMask);
+        if (!file.Any()) return;
+        var filePath = file[0];
+        using var reader = XmlReader.Create(filePath, new XmlReaderSettings { Async = true });
+        using var connection = _database.CreateConnection();
+        connection.Open();
+
+        var updateCommandParamValues = new List<Dictionary<string, object?>>(_capacity);
+        var addCommandParamValues = new List<Dictionary<string, object?>>(_capacity);
+        while (await reader.ReadAsync())
+        {
+            if (reader.NodeType != XmlNodeType.Element || reader.GetAttribute("ID") == null) continue;
+            var id = int.Parse(reader.GetAttribute("ID"));
+            var objectId = reader.GetAttribute("OBJECTID");
+            var changeId = reader.GetAttribute("CHANGEID");
+            var changeEndId = reader.GetAttribute("CHANGEIDEND");
+            var typeId = reader.GetAttribute("TYPEID");
+            var value = reader.GetAttribute("VALUE");
+            var updateDate = reader.GetAttribute("UPDATEDATE");
+            var startDate = reader.GetAttribute("STARTDATE");
+            var endDate = reader.GetAttribute("ENDDATE");
+            var queryParams = new Dictionary<string, object?> {
+                { "@1", id },
+                { "@2", objectId != null ? int.Parse(objectId) : null },
+                { "@3", changeId != null ? int.Parse(changeId) : null },
+                { "@4", changeEndId != null ? int.Parse(changeEndId) : null },
+                { "@5", typeId != null ? int.Parse(typeId) : null },
+                { "@6", value },
+                { "@7", updateDate != null ? DateTime.Parse(updateDate) : null },
+                { "@8", startDate != null ? DateTime.Parse(startDate) : null },
+                { "@9", endDate != null ? DateTime.Parse(endDate) : null },
+            };
+
+
+            if (delta)
+            {
+                var count = await connection.ExecuteScalarAsync<int>(
+                    selectQuery,
+                    param: new Dictionary<string, object> { { "@1", id } },
+                    commandTimeout: 600);
+                if (count > 0)
+                    updateCommandParamValues.Add(queryParams);
+                else
+                    addCommandParamValues.Add(queryParams);
+            }
+            else
+            {
+                addCommandParamValues.Add(queryParams);
+            }
+
+            if (addCommandParamValues.Count == condition)
+            {
+                ToDb(connection, insertQuery, paramNames, addCommandParamValues);
+                addCommandParamValues.Clear();
+            }
+
+            if (updateCommandParamValues.Count == condition)
+            {
+                ToDb(connection, updateQuery, paramNames, updateCommandParamValues);
+                updateCommandParamValues.Clear();
+            }
+        }
+        if (addCommandParamValues.Count > 0)
+        {
+            ToDb(connection, insertQuery, paramNames, addCommandParamValues);
+            addCommandParamValues.Clear();
+        }
+
+        if (updateCommandParamValues.Count > 0)
+        {
+            ToDb(connection, updateQuery, paramNames, updateCommandParamValues);
+            updateCommandParamValues.Clear();
+        }
+    }
+
+    private async Task ExtractRoomParams(string path, bool delta)
+    {
+        var paramNames = new[] { "@1", "@2", "@3", "@4", "@5", "@6", "@7", "@8", "@9" };
+        const string fileMask = "AS_ROOMS_PARAMS_*.XML";
+        var selectQuery = @"SELECT COUNT(*) FROM room_params WHERE id = @1";
+        var insertQuery = @"INSERT INTO room_params VALUES (@1, @2, @3, @4, @5, @6, @7, @8, @9)";
+        var updateQuery = @"UPDATE room_params SET object_id = @2, change_id = @3, change_end_id = @4, type_id = @5, value = @6, update_date = @7, start_date = @8, end_date = @9 WHERE id = @1";
+
+        var file = Directory.GetFiles(path, fileMask);
+        if (!file.Any()) return;
+        var filePath = file[0];
+        using var reader = XmlReader.Create(filePath, new XmlReaderSettings { Async = true });
+        using var connection = _database.CreateConnection();
+        connection.Open();
+
+        var updateCommandParamValues = new List<Dictionary<string, object?>>(_capacity);
+        var addCommandParamValues = new List<Dictionary<string, object?>>(_capacity);
+        while (await reader.ReadAsync())
+        {
+            if (reader.NodeType != XmlNodeType.Element || reader.GetAttribute("ID") == null) continue;
+            var id = int.Parse(reader.GetAttribute("ID"));
+            var objectId = reader.GetAttribute("OBJECTID");
+            var changeId = reader.GetAttribute("CHANGEID");
+            var changeEndId = reader.GetAttribute("CHANGEIDEND");
+            var typeId = reader.GetAttribute("TYPEID");
+            var value = reader.GetAttribute("VALUE");
+            var updateDate = reader.GetAttribute("UPDATEDATE");
+            var startDate = reader.GetAttribute("STARTDATE");
+            var endDate = reader.GetAttribute("ENDDATE");
+            var queryParams = new Dictionary<string, object?> {
+                { "@1", id },
+                { "@2", objectId != null ? int.Parse(objectId) : null },
+                { "@3", changeId != null ? int.Parse(changeId) : null },
+                { "@4", changeEndId != null ? int.Parse(changeEndId) : null },
+                { "@5", typeId != null ? int.Parse(typeId) : null },
+                { "@6", value },
+                { "@7", updateDate != null ? DateTime.Parse(updateDate) : null },
+                { "@8", startDate != null ? DateTime.Parse(startDate) : null },
+                { "@9", endDate != null ? DateTime.Parse(endDate) : null },
+            };
+
+
+            if (delta)
+            {
+                var count = await connection.ExecuteScalarAsync<int>(
+                    selectQuery,
+                    param: new Dictionary<string, object> { { "@1", id } },
+                    commandTimeout: 600);
+                if (count > 0)
+                    updateCommandParamValues.Add(queryParams);
+                else
+                    addCommandParamValues.Add(queryParams);
+            }
+            else
+            {
+                addCommandParamValues.Add(queryParams);
+            }
+
+            if (addCommandParamValues.Count == condition)
+            {
+                ToDb(connection, insertQuery, paramNames, addCommandParamValues);
+                addCommandParamValues.Clear();
+            }
+
+            if (updateCommandParamValues.Count == condition)
+            {
+                ToDb(connection, updateQuery, paramNames, updateCommandParamValues);
+                updateCommandParamValues.Clear();
+            }
+        }
+        if (addCommandParamValues.Count > 0)
+        {
+            ToDb(connection, insertQuery, paramNames, addCommandParamValues);
+            addCommandParamValues.Clear();
+        }
+
+        if (updateCommandParamValues.Count > 0)
+        {
+            ToDb(connection, updateQuery, paramNames, updateCommandParamValues);
+            updateCommandParamValues.Clear();
+        }
+    }
+
+    private async Task ExtractApartmentsParams(string path, bool delta)
+    {
+        var paramNames = new[] { "@1", "@2", "@3", "@4", "@5", "@6", "@7", "@8", "@9" };
+        const string fileMask = "AS_APARTMENTS_PARAMS_*.XML";
+        var selectQuery = @"SELECT COUNT(*) FROM apartment_params WHERE id = @1";
+        var insertQuery = @"INSERT INTO apartment_params VALUES (@1, @2, @3, @4, @5, @6, @7, @8, @9)";
+        var updateQuery = @"UPDATE apartment_params SET object_id = @2, change_id = @3, change_end_id = @4, type_id = @5, value = @6, update_date = @7, start_date = @8, end_date = @9 WHERE id = @1";
+
+        var file = Directory.GetFiles(path, fileMask);
+        if (!file.Any()) return;
+        var filePath = file[0];
+        using var reader = XmlReader.Create(filePath, new XmlReaderSettings { Async = true });
+        using var connection = _database.CreateConnection();
+        connection.Open();
+
+        var updateCommandParamValues = new List<Dictionary<string, object?>>(_capacity);
+        var addCommandParamValues = new List<Dictionary<string, object?>>(_capacity);
+        while (await reader.ReadAsync())
+        {
+            if (reader.NodeType != XmlNodeType.Element || reader.GetAttribute("ID") == null) continue;
+            var id = int.Parse(reader.GetAttribute("ID"));
+            var objectId = reader.GetAttribute("OBJECTID");
+            var changeId = reader.GetAttribute("CHANGEID");
+            var changeEndId = reader.GetAttribute("CHANGEIDEND");
+            var typeId = reader.GetAttribute("TYPEID");
+            var value = reader.GetAttribute("VALUE");
+            var updateDate = reader.GetAttribute("UPDATEDATE");
+            var startDate = reader.GetAttribute("STARTDATE");
+            var endDate = reader.GetAttribute("ENDDATE");
+            var queryParams = new Dictionary<string, object?> {
+                { "@1", id },
+                { "@2", objectId != null ? int.Parse(objectId) : null },
+                { "@3", changeId != null ? int.Parse(changeId) : null },
+                { "@4", changeEndId != null ? int.Parse(changeEndId) : null },
+                { "@5", typeId != null ? int.Parse(typeId) : null },
+                { "@6", value },
+                { "@7", updateDate != null ? DateTime.Parse(updateDate) : null },
+                { "@8", startDate != null ? DateTime.Parse(startDate) : null },
+                { "@9", endDate != null ? DateTime.Parse(endDate) : null },
+            };
+
+
+            if (delta)
+            {
+                var count = await connection.ExecuteScalarAsync<int>(
+                    selectQuery,
+                    param: new Dictionary<string, object> { { "@1", id } },
+                    commandTimeout: 600);
+                if (count > 0)
+                    updateCommandParamValues.Add(queryParams);
+                else
+                    addCommandParamValues.Add(queryParams);
+            }
+            else
+            {
+                addCommandParamValues.Add(queryParams);
+            }
+
+            if (addCommandParamValues.Count == condition)
+            {
+                ToDb(connection, insertQuery, paramNames, addCommandParamValues);
+                addCommandParamValues.Clear();
+            }
+
+            if (updateCommandParamValues.Count == condition)
+            {
+                ToDb(connection, updateQuery, paramNames, updateCommandParamValues);
+                updateCommandParamValues.Clear();
+            }
+        }
+        if (addCommandParamValues.Count > 0)
+        {
+            ToDb(connection, insertQuery, paramNames, addCommandParamValues);
+            addCommandParamValues.Clear();
+        }
+
+        if (updateCommandParamValues.Count > 0)
+        {
+            ToDb(connection, updateQuery, paramNames, updateCommandParamValues);
+            updateCommandParamValues.Clear();
+        }
+    }
+
+    private async Task ExtractHouseParams(string path, bool delta)
+    {
+        var paramNames = new[] { "@1", "@2", "@3", "@4", "@5", "@6", "@7", "@8", "@9" };
+        const string fileMask = "AS_HOUSES_PARAMS_*.XML";
+        var selectQuery = @"SELECT COUNT(*) FROM house_params WHERE id = @1";
+        var insertQuery = @"INSERT INTO house_params VALUES (@1, @2, @3, @4, @5, @6, @7, @8, @9)";
+        var updateQuery = @"UPDATE house_params SET object_id = @2, change_id = @3, change_end_id = @4, type_id = @5, value = @6, update_date = @7, start_date = @8, end_date = @9 WHERE id = @1";
+
+        var file = Directory.GetFiles(path, fileMask);
+        if (!file.Any()) return;
+        var filePath = file[0];
+        using var reader = XmlReader.Create(filePath, new XmlReaderSettings { Async = true });
+        using var connection = _database.CreateConnection();
+        connection.Open();
+
+        var updateCommandParamValues = new List<Dictionary<string, object?>>(_capacity);
+        var addCommandParamValues = new List<Dictionary<string, object?>>(_capacity);
+        while (await reader.ReadAsync())
+        {
+            if (reader.NodeType != XmlNodeType.Element || reader.GetAttribute("ID") == null) continue;
+            var id = int.Parse(reader.GetAttribute("ID"));
+            var objectId = reader.GetAttribute("OBJECTID");
+            var changeId = reader.GetAttribute("CHANGEID");
+            var changeEndId = reader.GetAttribute("CHANGEIDEND");
+            var typeId = reader.GetAttribute("TYPEID");
+            var value = reader.GetAttribute("VALUE");
+            var updateDate = reader.GetAttribute("UPDATEDATE");
+            var startDate = reader.GetAttribute("STARTDATE");
+            var endDate = reader.GetAttribute("ENDDATE");
+            var queryParams = new Dictionary<string, object?> {
+                { "@1", id },
+                { "@2", objectId != null ? int.Parse(objectId) : null },
+                { "@3", changeId != null ? int.Parse(changeId) : null },
+                { "@4", changeEndId != null ? int.Parse(changeEndId) : null },
+                { "@5", typeId != null ? int.Parse(typeId) : null },
+                { "@6", value },
+                { "@7", updateDate != null ? DateTime.Parse(updateDate) : null },
+                { "@8", startDate != null ? DateTime.Parse(startDate) : null },
+                { "@9", endDate != null ? DateTime.Parse(endDate) : null },
+            };
+
+
+            if (delta)
+            {
+                var count = await connection.ExecuteScalarAsync<int>(
+                    selectQuery,
+                    param: new Dictionary<string, object> { { "@1", id } },
+                    commandTimeout: 600);
+                if (count > 0)
+                    updateCommandParamValues.Add(queryParams);
+                else
+                    addCommandParamValues.Add(queryParams);
+            }
+            else
+            {
+                addCommandParamValues.Add(queryParams);
+            }
+
+            if (addCommandParamValues.Count == condition)
+            {
+                ToDb(connection, insertQuery, paramNames, addCommandParamValues);
+                addCommandParamValues.Clear();
+            }
+
+            if (updateCommandParamValues.Count == condition)
+            {
+                ToDb(connection, updateQuery, paramNames, updateCommandParamValues);
+                updateCommandParamValues.Clear();
+            }
+        }
+        if (addCommandParamValues.Count > 0)
+        {
+            ToDb(connection, insertQuery, paramNames, addCommandParamValues);
+            addCommandParamValues.Clear();
+        }
+
+        if (updateCommandParamValues.Count > 0)
+        {
+            ToDb(connection, updateQuery, paramNames, updateCommandParamValues);
+            updateCommandParamValues.Clear();
+        }
+    }
+
+    private async Task ExtractSteadParams(string path, bool delta)
+    {
+        var paramNames = new[] { "@1", "@2", "@3", "@4", "@5", "@6", "@7", "@8", "@9" };
+        const string fileMask = "AS_STEADS_PARAMS_*.XML";
+        var selectQuery = @"SELECT COUNT(*) FROM stead_params WHERE id = @1";
+        var insertQuery = @"INSERT INTO stead_params VALUES (@1, @2, @3, @4, @5, @6, @7, @8, @9)";
+        var updateQuery = @"UPDATE stead_params SET object_id = @2, change_id = @3, change_end_id = @4, type_id = @5, value = @6, update_date = @7, start_date = @8, end_date = @9 WHERE id = @1";
+
+        var file = Directory.GetFiles(path, fileMask);
+        if (!file.Any()) return;
+        var filePath = file[0];
+        using var reader = XmlReader.Create(filePath, new XmlReaderSettings { Async = true });
+        using var connection = _database.CreateConnection();
+        connection.Open();
+
+        var updateCommandParamValues = new List<Dictionary<string, object?>>(_capacity);
+        var addCommandParamValues = new List<Dictionary<string, object?>>(_capacity);
+        while (await reader.ReadAsync())
+        {
+            if (reader.NodeType != XmlNodeType.Element || reader.GetAttribute("ID") == null) continue;
+            var id = int.Parse(reader.GetAttribute("ID"));
+            var objectId = reader.GetAttribute("OBJECTID");
+            var changeId = reader.GetAttribute("CHANGEID");
+            var changeEndId = reader.GetAttribute("CHANGEIDEND");
+            var typeId = reader.GetAttribute("TYPEID");
+            var value = reader.GetAttribute("VALUE");
+            var updateDate = reader.GetAttribute("UPDATEDATE");
+            var startDate = reader.GetAttribute("STARTDATE");
+            var endDate = reader.GetAttribute("ENDDATE");
+            var queryParams = new Dictionary<string, object?> {
+                { "@1", id },
+                { "@2", objectId != null ? int.Parse(objectId) : null },
+                { "@3", changeId != null ? int.Parse(changeId) : null },
+                { "@4", changeEndId != null ? int.Parse(changeEndId) : null },
+                { "@5", typeId != null ? int.Parse(typeId) : null },
+                { "@6", value },
+                { "@7", updateDate != null ? DateTime.Parse(updateDate) : null },
+                { "@8", startDate != null ? DateTime.Parse(startDate) : null },
+                { "@9", endDate != null ? DateTime.Parse(endDate) : null },
+            };
+
+
+            if (delta)
+            {
+                var count = await connection.ExecuteScalarAsync<int>(
+                    selectQuery,
+                    param: new Dictionary<string, object> { { "@1", id } },
+                    commandTimeout: 600);
+                if (count > 0)
+                    updateCommandParamValues.Add(queryParams);
+                else
+                    addCommandParamValues.Add(queryParams);
+            }
+            else
+            {
+                addCommandParamValues.Add(queryParams);
+            }
+
+            if (addCommandParamValues.Count == condition)
+            {
+                ToDb(connection, insertQuery, paramNames, addCommandParamValues);
+                addCommandParamValues.Clear();
+            }
+
+            if (updateCommandParamValues.Count == condition)
+            {
+                ToDb(connection, updateQuery, paramNames, updateCommandParamValues);
+                updateCommandParamValues.Clear();
+            }
+        }
+        if (addCommandParamValues.Count > 0)
+        {
+            ToDb(connection, insertQuery, paramNames, addCommandParamValues);
+            addCommandParamValues.Clear();
+        }
+
+        if (updateCommandParamValues.Count > 0)
+        {
+            ToDb(connection, updateQuery, paramNames, updateCommandParamValues);
+            updateCommandParamValues.Clear();
+        }
+    }
+
+    private async Task ExtractAddrObjParams(string path, bool delta)
+    {
+        var paramNames = new[] { "@1", "@2", "@3", "@4", "@5", "@6", "@7", "@8", "@9" };
+        const string fileMask = "AS_ADDR_OBJ_PARAMS_*.XML";
+        var selectQuery = @"SELECT COUNT(*) FROM addr_obj_params WHERE id = @1";
+        var insertQuery = @"INSERT INTO addr_obj_params VALUES (@1, @2, @3, @4, @5, @6, @7, @8, @9)";
+        var updateQuery = @"UPDATE addr_obj_params SET object_id = @2, change_id = @3, change_end_id = @4, type_id = @5, value = @6, update_date = @7, start_date = @8, end_date = @9 WHERE id = @1";
+
+        var file = Directory.GetFiles(path, fileMask);
+        if (!file.Any()) return;
+        var filePath = file[0];
+        using var reader = XmlReader.Create(filePath, new XmlReaderSettings { Async = true });
+        using var connection = _database.CreateConnection();
+        connection.Open();
+
+        var updateCommandParamValues = new List<Dictionary<string, object?>>(_capacity);
+        var addCommandParamValues = new List<Dictionary<string, object?>>(_capacity);
+        while (await reader.ReadAsync())
+        {
+            if (reader.NodeType != XmlNodeType.Element || reader.GetAttribute("ID") == null) continue;
+            var id = int.Parse(reader.GetAttribute("ID"));
+            var objectId = reader.GetAttribute("OBJECTID");
+            var changeId = reader.GetAttribute("CHANGEID");
+            var changeEndId = reader.GetAttribute("CHANGEIDEND");
+            var typeId = reader.GetAttribute("TYPEID");
+            var value = reader.GetAttribute("VALUE");
+            var updateDate = reader.GetAttribute("UPDATEDATE");
+            var startDate = reader.GetAttribute("STARTDATE");
+            var endDate = reader.GetAttribute("ENDDATE");
+            var queryParams = new Dictionary<string, object?> {
+                { "@1", id },
+                { "@2", objectId != null ? int.Parse(objectId) : null },
+                { "@3", changeId != null ? int.Parse(changeId) : null },
+                { "@4", changeEndId != null ? int.Parse(changeEndId) : null },
+                { "@5", typeId != null ? int.Parse(typeId) : null },
+                { "@6", value },
+                { "@7", updateDate != null ? DateTime.Parse(updateDate) : null },
+                { "@8", startDate != null ? DateTime.Parse(startDate) : null },
+                { "@9", endDate != null ? DateTime.Parse(endDate) : null },
+            };
+
+
+            if (delta)
+            {
+                var count = await connection.ExecuteScalarAsync<int>(
+                    selectQuery,
+                    param: new Dictionary<string, object> { { "@1", id } },
+                    commandTimeout: 600);
+                if (count > 0)
+                    updateCommandParamValues.Add(queryParams);
+                else
+                    addCommandParamValues.Add(queryParams);
+            }
+            else
+            {
+                addCommandParamValues.Add(queryParams);
+            }
+
+            if (addCommandParamValues.Count == condition)
+            {
+                ToDb(connection, insertQuery, paramNames, addCommandParamValues);
+                addCommandParamValues.Clear();
+            }
+
+            if (updateCommandParamValues.Count == condition)
+            {
+                ToDb(connection, updateQuery, paramNames, updateCommandParamValues);
+                updateCommandParamValues.Clear();
+            }
+        }
+        if (addCommandParamValues.Count > 0)
+        {
+            ToDb(connection, insertQuery, paramNames, addCommandParamValues);
+            addCommandParamValues.Clear();
+        }
+
+        if (updateCommandParamValues.Count > 0)
+        {
+            ToDb(connection, updateQuery, paramNames, updateCommandParamValues);
+            updateCommandParamValues.Clear();
+        }
+    }
+
+    private async Task ExtractAddrObjDivision(string path, bool delta)
     {
         await Task.Delay(1);
     }
 
-    private async Task ExtractRoomParams(string path)
-    {
-        //TODO: Нужно взять регион в котором есть машиноместа для отладки
-        await Task.Delay(1);
-    }
-
-    private async Task ExtractApartmentsParams(string path)
+    private async Task ExtractChangeHistory(string path, bool delta)
     {
         await Task.Delay(1);
     }
 
-    private async Task ExtractHouseParams(string path)
+    private async Task ExtractMunHierarchy(string path, bool delta)
     {
         await Task.Delay(1);
     }
 
-    private async Task ExtractSteadParams(string path)
+    private async Task ExtractAdmHierarchy(string path, bool delta)
     {
         await Task.Delay(1);
     }
 
-    private async Task ExtractAddrObjParams(string path)
+    private async Task ExtractCarplaces(string path, bool delta)
     {
         await Task.Delay(1);
     }
 
-    private async Task ExtractAddrObjDivision(string path)
+    private async Task ExtractRooms(string path, bool delta)
     {
         await Task.Delay(1);
     }
 
-    private async Task ExtractChangeHistory(string path)
+    private async Task ExtractApartments(string path, bool delta)
     {
         await Task.Delay(1);
     }
 
-    private async Task ExtractMunHierarchy(string path)
+    private async Task ExtractSteads(string path, bool delta)
     {
         await Task.Delay(1);
     }
 
-    private async Task ExtractAdmHierarchy(string path)
+    private async Task ExtractHouses(string path, bool delta)
     {
         await Task.Delay(1);
     }
 
-    private async Task ExtractCarplaces(string path)
+    private async Task ExtractAddrObj(string path, bool delta)
     {
         await Task.Delay(1);
     }
 
-    private async Task ExtractRooms(string path)
-    {
-        await Task.Delay(1);
-    }
-
-    private async Task ExtractApartments(string path)
-    {
-        await Task.Delay(1);
-    }
-
-    private async Task ExtractSteads(string path)
-    {
-        await Task.Delay(1);
-    }
-
-    private async Task ExtractHouses()
-    {
-        await Task.Delay(1);
-    }
-
-    private async Task ExtractAddrObj(string path)
-    {
-        await Task.Delay(1);
-    }
-
-    private async Task ExtractReestrObjects(string path)
+    private async Task ExtractReestrObjects(string path, bool delta)
     {
         await Task.Delay(1);
     }
     #endregion
-    public async Task ExtractData(string path)
+    public async Task ExtractData(string path, bool delta = false)
     {
-        await ExtractCarplacesParams(path);
-        await ExtractRoomParams(path);
-        await ExtractNormativeDocs(path);
-        await ExtractApartmentsParams(path);
-        await ExtractHouseParams(path);
-        await ExtractSteadParams(path);
-        await ExtractAddrObjParams(path);
-        await ExtractAddrObjDivision(path);
-        await ExtractChangeHistory(path);
-        await ExtractMunHierarchy(path);
-        await ExtractAdmHierarchy(path);
-        await ExtractCarplaces(path);
-        await ExtractRooms(path);
-        await ExtractApartments(path);
-        await ExtractSteads(path);
-        await ExtractAddrObj(path);
-        await ExtractReestrObjects(path);
+        await ExtractCarplacesParams(path, delta);
+        await ExtractRoomParams(path, delta);
+        await ExtractNormativeDocs(path, delta);
+        await ExtractApartmentsParams(path, delta);
+        await ExtractHouseParams(path, delta);
+        await ExtractSteadParams(path, delta);
+        await ExtractAddrObjParams(path, delta);
+        await ExtractAddrObjDivision(path, delta);
+        await ExtractChangeHistory(path, delta);
+        await ExtractMunHierarchy(path, delta);
+        await ExtractAdmHierarchy(path, delta);
+        await ExtractCarplaces(path, delta);
+        await ExtractRooms(path, delta);
+        await ExtractApartments(path, delta);
+        await ExtractSteads(path, delta);
+        await ExtractAddrObj(path, delta);
+        await ExtractReestrObjects(path, delta);
+        await ExtractHouses(path, delta);
+    }
+
+
+    private void ToDb(IDbConnection conn, string commandText, string[] paramNames, List<Dictionary<string, object?>> queryParams)
+    {
+        using var transaction = conn.BeginTransaction();
+        var command = conn.CreateCommand();
+        command.CommandText = commandText;
+
+        foreach (var item in paramNames)
+        {
+            var p = command.CreateParameter();
+            p.ParameterName = item;
+            command.Parameters.Add(p);
+        }
+
+        foreach (var item in queryParams)
+        {
+            foreach (var i in item)
+            {
+                var parameter = command.Parameters[i.Key] as IDbDataParameter;
+                parameter.Value = i.Value ?? DBNull.Value;
+            }
+            command.ExecuteNonQuery();
+        }
+        transaction.Commit();
     }
 
 }
