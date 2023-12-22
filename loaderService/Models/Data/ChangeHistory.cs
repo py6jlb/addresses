@@ -2,9 +2,10 @@
 
 public class ChangeHistory
 {
-    public int ChangeId { get; set; } 
-	public int ObjectId { get; set; } 
+    public long ChangeId { get; set; } 
+	public long ObjectId { get; set; } 
 	public string AdrObjectId { get; set; } 
-	public int OperTypeId { get; set; } 
+	public long OperTypeId { get; set; } 
+	public long? NDocId { get; set; } 
 	public DateTime ChangeDate { get; set; }
 }

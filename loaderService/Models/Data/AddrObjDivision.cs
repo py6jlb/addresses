@@ -2,8 +2,8 @@
 
 public class AddrObjDivision
 {
-    public int Id { get; set; }
-    public int ParentId { get; set; }
-    public int ChildId { get; set; }
-    public int ChangeId { get; set; }
+    public long Id { get; set; }
+    public long ParentId { get; set; }
+    public long ChildId { get; set; }
+    public long ChangeId { get; set; }
 }
