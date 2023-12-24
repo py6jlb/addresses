@@ -15,9 +15,6 @@ public class Worker : BackgroundService
     {
         while (!stoppingToken.IsCancellationRequested)
         {
-            if (_logger.IsEnabled(LogLevel.Information))
-                _logger.LogInformation("Worker running at: {time}", DateTimeOffset.Now);
-
             _logger.LogInformation("Types extraction start at: {time}", DateTimeOffset.Now);
             var typePath = "./data/base";
             await _extractor.ExtractTypes(typePath);

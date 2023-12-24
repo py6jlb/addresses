@@ -1,6 +1,7 @@
 using System.Data;
 using Microsoft.Data.Sqlite;
 using Dapper;
+using System.Data.Common;
 
 namespace loaderService.Database;
 
@@ -13,7 +14,7 @@ public class DataContext
         _configuration = configuration;
     }
 
-    public IDbConnection CreateConnection()
+    public DbConnection CreateConnection()
     {
         return new SqliteConnection(_configuration.GetConnectionString("GarDatabase"));
     }
@@ -100,7 +101,7 @@ public class DataContext
                     start_date TEXT,
                     end_date TEXT,
                     update_date TEXT,
-                    is_active TEXT
+                    is_active INTEGER
                 );
                 
 
