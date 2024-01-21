@@ -8,4 +8,5 @@ public class AddressNode
     public string TypeName { get; set; }
     public int Level { get; set; }
     public string ObjectGuid { get; set; }
+    public int DeepLevel {get;set;}
 }
